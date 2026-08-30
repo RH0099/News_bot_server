@@ -1,11 +1,11 @@
 const Parser = require('rss-parser');
 const TelegramBot = require('node-telegram-bot-api');
-const { createCanvas, loadImage } = require('canvas');
+const { createCanvas, loadImage, registerFont } = require('canvas');
 const fs = require('fs');
+const { translate } = require('@vitalets/google-translate-api');
 
 const parser = new Parser();
 
-// GitHub Secrets / Environment Variables
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
@@ -16,22 +16,21 @@ if (!BOT_TOKEN || !CHAT_ID) {
 
 const bot = new TelegramBot(BOT_TOKEN, { polling: false });
 
-// সংবাদ উৎসের তালিকা (Al Jazeera অগ্রাধিকার পাবে)
+// সংবাদ উৎসের তালিকা
 const FEEDS = [
-  { name: 'Al Jazeera', url: 'https://www.aljazeera.com/xml/rss/all.xml' },
-  { name: 'BBC World', url: 'http://feeds.bbci.co.uk/news/world/rss.xml' },
-  { name: 'TRT World', url: 'https://www.trtworld.com/rss/news' }
+  { name: 'আল জাজিরা (Al Jazeera)', url: 'https://www.aljazeera.com/xml/rss/all.xml' },
+  { name: 'বিবিসি ওয়ার্ল্ড (BBC)', url: 'http://feeds.bbci.co.uk/news/world/rss.xml' },
+  { name: 'টিআরটি ওয়ার্ল্ড (TRT)', url: 'https://www.trtworld.com/rss/news' }
 ];
 
-// মজার কাস্টম অ্যাডভারটাইজমেন্ট কালেকশন (নিচের অ্যাড স্ট্রিপের জন্য)
+// কাস্টম বিজ্ঞাপনসমূহ (সম্পূর্ণ বাংলায়)
 const FUNNY_ADS = [
-  { title: 'আওয়ামী মোবাইল - সেরা দামে ফালতু ফোন', brand: 'mi awami', warranty: '17 YEARS GUARANTY' },
-  { title: 'ভণ্ড চার্জার - ১০০% স্লো চার্জের গ্যারান্টি', brand: 'Bhondu', warranty: 'NO GUARANTY' },
-  { title: 'ফাঁকি ফ্যান - হাওয়া ছাড়া শুধুই বিকট শব্দ', brand: 'Fanki', warranty: '50 YEARS WARRANTY' },
-  { title: 'ভুয়া পাওয়ার ব্যাংক - ২ পার্সেন্টে শেষ চার্জ', brand: 'FakePower', warranty: 'ZERO GUARANTY' }
+  { title: 'আওয়ামী মোবাইল - সেরা দামে ফালতু ফোন', brand: 'মি আওয়ামী', warranty: '১৭ বছরের গ্যারান্টি' },
+  { title: 'ভণ্ড চার্জার - ১০০% স্লো চার্জের গ্যারান্টি', brand: 'ভণ্ড', warranty: 'গ্যারান্টি নাই' },
+  { title: 'ফাঁকি ফ্যান - হাওয়া ছাড়া শুধুই বিকট শব্দ', brand: 'ফাঁকি', warranty: '৫০ বছরের ওয়ারেন্টি' },
+  { title: 'ভুয়া পাওয়ার ব্যাংক - ২ পার্সেন্টে চার্জ শেষ', brand: 'ফেক পাওয়ার', warranty: 'জিরো ওয়ারেন্টি' }
 ];
 
-// ইতিমধ্যে পোস্ট করা সংবাদের রেকর্ড সংরক্ষণের ব্যবস্থা
 const POSTED_NEWS_FILE = './posted_news.json';
 let postedNews = [];
 
@@ -49,19 +48,41 @@ function savePostedNews(link) {
   fs.writeFileSync(POSTED_NEWS_FILE, JSON.stringify(postedNews, null, 2));
 }
 
-// আপলোড করা ফটোর মতো হুবহু Canvas Graphic জেনারেটর
-async function generateCustomNewsCard(title, imageUrl) {
+// ইংরেজি থেকে বাংলা অনুবাদের ফাংশন
+async function translateToBangla(text) {
+  try {
+    const res = await translate(text, { to: 'bn' });
+    return res.text;
+  } catch (err) {
+    console.error('অনুবাদে ত্রুটি:', err.message);
+    return text; // অনুবাদ না হলে মূল টেক্সট ফেরত দেবে
+  }
+}
+
+// কাস্টম ক্যানভাস ইমেজ জেনারেটর (বাংলা ফন্ট সাপোর্টসহ)
+async function generateBanglaNewsCard(titleBn, imageUrl, sourceName) {
   const canvas = createCanvas(1000, 1000);
   const ctx = canvas.getContext('2d');
 
-  // ১. মূল নিউজের ছবি (উপরের অংশে)
+  // ১. মূল ছবি সেট করা (যদি ছবি না থাকে তবে নিউজ ব্যানার ডিজাইন হবে)
   try {
     if (imageUrl) {
       const mainImg = await loadImage(imageUrl);
       ctx.drawImage(mainImg, 0, 0, 1000, 580);
     } else {
+      // ছবি না থাকলে প্রফেশনাল নিউজ ব্যাকগ্রাউন্ড
       ctx.fillStyle = '#0f172a';
       ctx.fillRect(0, 0, 1000, 580);
+
+      // মাঝখানে নিয়ন টেক্সট ব্যানার
+      ctx.fillStyle = '#00f2ff';
+      ctx.font = 'bold 45px "Noto Sans Bengali", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('M,A TV - ব্রেকিং নিউজ', 500, 270);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '28px "Noto Sans Bengali", sans-serif';
+      ctx.fillText(`উৎস: ${sourceName}`, 500, 330);
     }
   } catch (e) {
     ctx.fillStyle = '#0f172a';
@@ -72,12 +93,12 @@ async function generateCustomNewsCard(title, imageUrl) {
   ctx.fillStyle = '#a3080c';
   ctx.fillRect(0, 580, 1000, 335);
 
-  // ৩. নিউজ টাইটেল টেক্সট (সাদা কালার ও সেন্টার অ্যালাইনমেন্ট)
+  // ৩. বাংলা নিউজ টাইটেল (সেন্টার অ্যালাইনমেন্ট)
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 36px sans-serif';
+  ctx.font = 'bold 36px "Noto Sans Bengali", sans-serif';
   ctx.textAlign = 'center';
 
-  const words = title.split(' ');
+  const words = titleBn.split(' ');
   let line = '';
   let y = 650;
   const maxWidth = 900;
@@ -88,7 +109,7 @@ async function generateCustomNewsCard(title, imageUrl) {
     if (metrics.width > maxWidth && n > 0) {
       ctx.fillText(line, 500, y);
       line = words[n] + ' ';
-      y += 50;
+      y += 52;
     } else {
       line = testLine;
     }
@@ -98,20 +119,20 @@ async function generateCustomNewsCard(title, imageUrl) {
   // ৪. বাংলা তারিখ (ডানপাশে)
   const todayBn = new Date().toLocaleDateString('bn-BD', { day: 'numeric', month: 'long', year: 'numeric' });
   ctx.fillStyle = '#f8fafc';
-  ctx.font = 'bold 20px sans-serif';
+  ctx.font = 'bold 20px "Noto Sans Bengali", sans-serif';
   ctx.textAlign = 'right';
   ctx.fillText(todayBn, 960, 860);
 
-  // ৫. চ্যানলের নাম ও সোশ্যাল মিডিয়া বার (M,A TV Branding)
+  // ৫. চ্যানেলের নাম ও সোশ্যাল মিডিয়া বার (M,A TV Branding)
   ctx.textAlign = 'left';
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 32px sans-serif';
+  ctx.font = 'bold 32px "Noto Sans Bengali", sans-serif';
   ctx.fillText('M,A TV', 40, 895);
 
-  ctx.font = '18px sans-serif';
-  ctx.fillText('► www.matv.news   f  /matvbd   🔴 /matvbd', 200, 892);
+  ctx.font = '18px "Noto Sans Bengali", sans-serif';
+  ctx.fillText('► www.matv.news   f /matvbd   🔴 /matvbd', 200, 892);
 
-  // ৬. নিচের স্পেশাল কাস্টম অ্যাডভারটাইজমেন্ট বার (Ads Banner Strip)
+  // ৬. নিচের কাস্টম অ্যাডভারটাইজমেন্ট বার (Ads Banner Strip)
   const randomAd = FUNNY_ADS[Math.floor(Math.random() * FUNNY_ADS.length)];
   
   ctx.fillStyle = '#ffffff';
@@ -119,27 +140,22 @@ async function generateCustomNewsCard(title, imageUrl) {
 
   // অ্যাড টেক্সট
   ctx.fillStyle = '#d97706';
-  ctx.font = 'bold 22px sans-serif';
+  ctx.font = 'bold 22px "Noto Sans Bengali", sans-serif';
   ctx.fillText(randomAd.title, 40, 965);
 
   // অ্যাড ব্র্যান্ড বক্স
   ctx.fillStyle = '#ef4444';
-  ctx.fillRect(650, 925, 160, 65);
+  ctx.fillRect(630, 925, 160, 65);
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 20px sans-serif';
-  ctx.fillText(randomAd.brand, 665, 962);
+  ctx.font = 'bold 20px "Noto Sans Bengali", sans-serif';
+  ctx.fillText(randomAd.brand, 645, 962);
 
   // ওয়ারেন্টি টেক্সট
   ctx.fillStyle = '#1e293b';
-  ctx.font = 'bold 14px sans-serif';
-  ctx.fillText(randomAd.warranty, 825, 960);
+  ctx.font = 'bold 14px "Noto Sans Bengali", sans-serif';
+  ctx.fillText(randomAd.warranty, 805, 960);
 
   return canvas.toBuffer('image/png');
-}
-
-// বন্দি ভাইদের মুক্তির কাস্টম বার্তা
-function getAdvocacyMessage() {
-  return `\n📢 <b>বিশেষ দাবি ও বার্তা:</b>\nঅন্যায়ভাবে বন্দি থাকা সকল নিরীহ মুসলিম ভাইদের অবিলম্বে নিঃশর্ত মুক্তি ও ন্যায়বিচারের জোর দাবি জানাচ্ছি।`;
 }
 
 // নিউজ চেক ও পোস্ট করার মূল প্রসেস
@@ -154,15 +170,22 @@ async function checkAndPostNews() {
       for (const item of feed.items) {
         const newsLink = item.link;
 
-        // আগে পোস্ট করা হয়ে থাকলে স্কিপ করবে
         if (postedNews.includes(newsLink)) continue;
 
-        const title = item.title.trim();
-        let snippet = item.contentSnippet || item.content || title;
-        snippet = snippet.replace(/<[^>]*>?/gm, '').replace(/\s+/g, ' ').trim();
-        if (snippet.length > 250) snippet = snippet.slice(0, 250) + '...';
+        const rawTitle = item.title.trim();
+        let rawSnippet = item.contentSnippet || item.content || rawTitle;
+        rawSnippet = rawSnippet.replace(/<[^>]*>?/gm, '').replace(/\s+/g, ' ').trim();
+        if (rawSnippet.length > 250) rawSnippet = rawSnippet.slice(0, 250) + '...';
 
-        // সংবাদের আসল ছবি বা থাম্বনেইল ইউআরএল নেওয়ার চেষ্টা
+        console.log(`🌐 মূল নিউজ (ইংরেজি): ${rawTitle}`);
+
+        // ১. অটোমেটিক বাংলায় অনুবাদ
+        const titleBn = await translateToBangla(rawTitle);
+        const snippetBn = await translateToBangla(rawSnippet);
+
+        console.log(`✅ বাংলায় অনূদিত: ${titleBn}`);
+
+        // সংবাদের আসল ছবি বের করার চেষ্টা
         let mediaUrl = null;
         if (item.enclosure && item.enclosure.url) {
           mediaUrl = item.enclosure.url;
@@ -170,38 +193,36 @@ async function checkAndPostNews() {
           mediaUrl = item['media:content'].$.url;
         }
 
-        console.log(`🚀 নতুন খবর পাওয়া গেছে (${source.name}): ${title}`);
+        // বাংলা ক্যানভাস ফটো ব্যানার তৈরি
+        const photoBuffer = await generateBanglaNewsCard(titleBn, mediaUrl, source.name);
 
-        // কাস্টম টেমপ্লেট অনুযায়ী ফটো ব্যানার জেনারেট
-        const photoBuffer = await generateCustomNewsCard(title, mediaUrl);
-
-        // টেলিগ্রাম পোস্ট টেক্সট
+        // সম্পূর্ণ বাংলায় প্রস্তুত করা ক্যাপশন
         const captionText = 
-`📺 <b>M,A TV - LIVE NEWS BROADCAST</b>
+`📺 <b>M,A TV - সরাসরি সংবাদ সম্প্রচার</b>
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-📰 <b>${title}</b>
+📰 <b>${titleBn}</b>
 
 📝 <b>সংক্ষিপ্ত বিবরণ:</b>
-${snippet}
-${getAdvocacyMessage()}
+${snippetBn}
+
+📢 <b>বিশেষ দাবি ও বার্তা:</b>
+অন্যায়ভাবে বন্দি থাকা সকল নিরীহ মুসলিম ভাইদের অবিলম্বে নিঃশর্ত মুক্তি ও ন্যায়বিচারের জোর দাবি জানাচ্ছি।
 
 📌 <b>উৎস:</b> ${source.name}
 🔗 <a href="${newsLink}">মূল খবর বিস্তারিত পড়তে এখানে চাপুন</a>`;
 
-        // টেলিগ্রাম গ্রুপে পাঠানো
+        // টেলিগ্রাম গ্রুপে পোস্ট
         await bot.sendPhoto(CHAT_ID, photoBuffer, {
           caption: captionText,
           parse_mode: 'HTML',
           reply_markup: {
-            inline_keyboard: [[{ text: '🌐 Read Full Article', url: newsLink }]]
+            inline_keyboard: [[{ text: '🌐 মূল খবরটি সরাসরি পড়ুন', url: newsLink }]]
           }
         });
 
-        // রেকর্ড সেভ
         savePostedNews(newsLink);
-        console.log('✅ টেলিগ্রাম গ্রুপে সফলভাবে সংবাদ পোস্ট করা হয়েছে!');
+        console.log('✅ বাংলায় সফলভাবে পোস্ট করা হয়েছে!');
 
-        // ১ মিনিট বিরতি দিয়ে পরবর্তী নিউজ থাকলে চেক করবে
         await new Promise(res => setTimeout(res, 60000));
       }
     } catch (err) {
@@ -210,12 +231,10 @@ ${getAdvocacyMessage()}
   }
 }
 
-// অনবরত চেক করার জন্য লাইভ লুপ
 async function startContinuousLoop() {
-  console.log("⚡ M,A TV News Bot সক্রিয় হয়েছে...");
+  console.log("⚡ M,A TV Bangla News Bot সক্রিয় হয়েছে...");
   while (true) {
     await checkAndPostNews();
-    // প্রতি ৩ মিনিট পর পর পুনরায় চেক করবে
     await new Promise(res => setTimeout(res, 180000));
   }
 }
