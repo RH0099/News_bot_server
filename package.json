@@ -1,7 +1,7 @@
 {
-  "name": "telecom-advanced-news-bot",
-  "version": "2.0.0",
-  "description": "Advanced automated news graphic generator & Telegram poster",
+  "name": "matv-advanced-news-bot",
+  "version": "3.5.0",
+  "description": "Muslim Army TV - Automated Live News & Canvas Graphic Designer Bot",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js"
