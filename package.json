@@ -1,0 +1,15 @@
+{
+  "name": "telecom-advanced-news-bot",
+  "version": "2.0.0",
+  "description": "Advanced automated news graphic generator & Telegram poster",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.0",
+    "canvas": "^2.11.2",
+    "node-telegram-bot-api": "^0.66.0",
+    "rss-parser": "^3.13.0"
+  }
+}
