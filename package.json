@@ -1,12 +1,13 @@
 {
   "name": "matv-advanced-news-bot",
-  "version": "3.5.0",
-  "description": "Muslim Army TV - Automated Live News & Canvas Graphic Designer Bot",
+  "version": "4.0.0",
+  "description": "Muslim Army TV - Bangla News Auto Translator & Custom Graphic Bot",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js"
   },
   "dependencies": {
+    "@vitalets/google-translate-api": "^9.0.0",
     "axios": "^1.7.0",
     "canvas": "^2.11.2",
     "node-telegram-bot-api": "^0.66.0",
