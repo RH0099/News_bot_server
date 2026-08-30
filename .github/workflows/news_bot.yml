@@ -1,33 +1,33 @@
-name: Advanced Telegram News Bot Engine
+name: MATV News Bot Service
 
 on:
   schedule:
-    # প্রতি ২ ঘণ্টা পর পর অটোমেটিক নিউজ পাঠাবে (Cron Time UTC)
-    - cron: '0 */2 * * *'
-  workflow_dispatch: # হাতে চাপ দিয়ে ম্যানুয়ালি টেস্ট করার অপশন
+    # প্রতি ১ ঘণ্টা পর পর নতুন ওয়ার্কফ্লো সেশন রিফ্রেশ করবে
+    - cron: '0 */1 * * *'
+  workflow_dispatch:
 
 jobs:
-  run-telecom-bot:
+  run-matv-bot:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js Environment
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Install Canvas Graphic Dependencies
+      - name: Install Graphic Engine
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libcairo2-dev pango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
 
-      - name: Install NPM Modules
+      - name: Install Dependencies
         run: npm install
 
-      - name: Execute News Scraper & Telegram Bot
+      - name: Execute M,A TV Bot
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
