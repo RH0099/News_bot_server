@@ -1,8 +1,7 @@
-name: MATV News Bot Service
+name: MATV Bangla News Bot Engine
 
 on:
   schedule:
-    # প্রতি ১ ঘণ্টা পর পর নতুন ওয়ার্কফ্লো সেশন রিফ্রেশ করবে
     - cron: '0 */1 * * *'
   workflow_dispatch:
 
@@ -19,12 +18,12 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Graphic Engine
+      - name: Install Bangla Fonts & Graphic Canvas Engine
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libcairo2-dev pango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
+          sudo apt-get install -y build-essential libcairo2-dev pango1.0-dev libjpeg-dev libgif-dev librsvg2-dev fonts-noto-core
 
-      - name: Install Dependencies
+      - name: Install NPM Modules
         run: npm install
 
       - name: Execute M,A TV Bot
