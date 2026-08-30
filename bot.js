@@ -2,6 +2,7 @@ const Parser = require('rss-parser');
 const TelegramBot = require('node-telegram-bot-api');
 const { createCanvas, loadImage } = require('canvas');
 const fs = require('fs');
+const axios = require('axios');
 const { translate } = require('@vitalets/google-translate-api');
 
 const parser = new Parser({
@@ -9,6 +10,7 @@ const parser = new Parser({
     item: [
       ['media:content', 'mediaContent'],
       ['media:thumbnail', 'mediaThumbnail'],
+      ['media:group', 'mediaGroup']
     ]
   }
 });
@@ -29,7 +31,7 @@ const FEEDS = [
   { name: 'টিআরটি ওয়ার্ল্ড (TRT)', url: 'https://www.trtworld.com/rss/news' }
 ];
 
-// বর্ধিত ট্রল বিজ্ঞাপনের তালিকা
+// আনলিমাইটেড ট্রল এডভারটাইজমেন্ট কালেকশন
 const FUNNY_ADS = [
   { title: 'আওয়ামী মোবাইল - সেরা দামে ফালতু ফোন', brand: 'মি আওয়ামী', warranty: '১৭ বছরের গ্যারান্টি' },
   { title: 'ভণ্ড চার্জার - ১০০% স্লো চার্জের গ্যারান্টি', brand: 'ভণ্ড', warranty: 'গ্যারান্টি নাই' },
@@ -37,7 +39,8 @@ const FUNNY_ADS = [
   { title: 'ভুয়া পাওয়ার ব্যাংক - ২ পার্সেন্টে চার্জ শেষ', brand: 'ফেক পাওয়ার', warranty: 'জিরো ওয়ারেন্টি' },
   { title: 'পলাইম সিম - নেটওয়ার্ক ছাড়া ফালতু স্পিড', brand: 'পলাইম', warranty: 'লাইফটাইম ধোঁকা' },
   { title: 'ফাঁকা বাল্ব - আলো দেবে না শুধুই বিল তুলবে', brand: 'ফাঁকা', warranty: '১০০ বছরের ওয়ারেন্টি' },
-  { title: 'ঠকবাজ এসি - গরম বাতাসে ঘর ভরিয়ে দেয়', brand: 'ঠকবাজ', warranty: 'কোনো গ্যারান্টি নেই' }
+  { title: 'ঠকবাজ এসি - গরম বাতাসে ঘর ভরিয়ে দেয়', brand: 'ঠকবাজ', warranty: 'কোনো গ্যারান্টি নেই' },
+  { title: 'ধান্দাবাজ বাইক - তেল খাবে বেশি চলবে কম', brand: 'ধান্দা', warranty: '৫ মিনিটের ওয়ারেন্টি' }
 ];
 
 const POSTED_NEWS_FILE = './posted_news.json';
@@ -66,44 +69,79 @@ async function translateToBangla(text) {
   }
 }
 
-// RSS Feed থেকে সংবাদের আসল ছবি বের করার ফাংশন
-function extractNewsImage(item) {
-  if (item.mediaContent && item.mediaContent.$ && item.mediaContent.$.url) {
-    return item.mediaContent.$.url;
-  }
-  if (item.mediaThumbnail && item.mediaThumbnail.$ && item.mediaThumbnail.$.url) {
-    return item.mediaThumbnail.$.url;
-  }
-  if (item.enclosure && item.enclosure.url) {
-    return item.enclosure.url;
-  }
-  
-  // HTML Content থেকে img tag খোঁজা
-  const content = item.content || item['content:encoded'] || item.description || '';
-  const imgMatch = content.match(/<img[^>]+src=["']([^"']+)["']/i);
-  if (imgMatch && imgMatch[1]) {
-    return imgMatch[1];
+// ১. RSS Feed এবং Web Scraping থেকে ছবির URL খুঁজে বের করার অ্যাডভান্সড ফাংশন
+async function extractNewsImage(item) {
+  try {
+    // Media content check
+    if (item.mediaContent && item.mediaContent.$ && item.mediaContent.$.url) return item.mediaContent.$.url;
+    if (item.mediaThumbnail && item.mediaThumbnail.$ && item.mediaThumbnail.$.url) return item.mediaThumbnail.$.url;
+    if (item.enclosure && item.enclosure.url) return item.enclosure.url;
+
+    // Media Group (Al Jazeera Specific)
+    if (item.mediaGroup && item.mediaGroup['media:content']) {
+      const mediaList = item.mediaGroup['media:content'];
+      if (Array.isArray(mediaList) && mediaList[0].$.url) return mediaList[0].$.url;
+      if (mediaList.$ && mediaList.$.url) return mediaList.$.url;
+    }
+
+    // HTML Content scraping (Img Tag)
+    const content = item.content || item['content:encoded'] || item.description || '';
+    const imgMatch = content.match(/<img[^>]+src=["']([^"']+)["']/i);
+    if (imgMatch && imgMatch[1]) return imgMatch[1];
+
+    // ওয়েবসাইট থেকে ওপেন গ্রাফ (og:image) ফালতু ব্লকিং ছাড়া নিয়ে আসা
+    if (item.link) {
+      const response = await axios.get(item.link, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+        timeout: 5000
+      });
+      const ogMatch = response.data.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
+                      response.data.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+      if (ogMatch && ogMatch[1]) return ogMatch[1];
+    }
+  } catch (err) {
+    console.log('⚠️ ছবি সরাসরি ওয়েবসাইট থেকে নিতে সমস্যা হয়েছে।');
   }
   return null;
 }
 
-// কাস্টম ক্যানভাস ইমেজ জেনারেটর
+// ২. ছবির URL দিয়ে Buffer ডাউনলোড ফাংশন (Hotlink Protection bypass করার জন্য)
+async function fetchImageBuffer(url) {
+  try {
+    const response = await axios.get(url, {
+      responseType: 'arraybuffer',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
+      }
+    });
+    return Buffer.from(response.data, 'binary');
+  } catch (err) {
+    console.error('❌ ইমেজ ডাউনলোড ত্রুটি:', err.message);
+    return null;
+  }
+}
+
+// ৩. ক্যানভাস কার্ড জেনারেটর
 async function generateBanglaNewsCard(titleBn, imageUrl, sourceName) {
   const canvas = createCanvas(1000, 1000);
   const ctx = canvas.getContext('2d');
 
-  // ১. সংবাদের ছবি বসানো (ছবি না থাকলে প্রফেশনাল ব্যাকগ্রাউন্ড)
   let imgLoaded = false;
+
   if (imageUrl) {
-    try {
-      const mainImg = await loadImage(imageUrl);
-      ctx.drawImage(mainImg, 0, 0, 1000, 580);
-      imgLoaded = true;
-    } catch (e) {
-      imgLoaded = false;
+    const imgBuffer = await fetchImageBuffer(imageUrl);
+    if (imgBuffer) {
+      try {
+        const mainImg = await loadImage(imgBuffer);
+        ctx.drawImage(mainImg, 0, 0, 1000, 580);
+        imgLoaded = true;
+      } catch (e) {
+        imgLoaded = false;
+      }
     }
   }
 
+  // যদি কোনো কারণে ছবি একেবারেই লোড না হতে পারে
   if (!imgLoaded) {
     ctx.fillStyle = '#0f172a';
     ctx.fillRect(0, 0, 1000, 580);
@@ -118,11 +156,11 @@ async function generateBanglaNewsCard(titleBn, imageUrl, sourceName) {
     ctx.fillText(`উৎস: ${sourceName}`, 500, 330);
   }
 
-  // ২. লাল ব্যানার (টাইটেল অংশ)
+  // লাল ব্যানার (টাইটেল অংশ)
   ctx.fillStyle = '#a3080c';
   ctx.fillRect(0, 580, 1000, 335);
 
-  // ৩. বাংলা নিউজ টাইটেল
+  // বাংলা নিউজ টাইটেল
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 36px "Noto Sans Bengali", sans-serif';
   ctx.textAlign = 'center';
@@ -145,14 +183,14 @@ async function generateBanglaNewsCard(titleBn, imageUrl, sourceName) {
   }
   ctx.fillText(line, 500, y);
 
-  // ৪. বাংলা তারিখ
+  // বাংলা তারিখ
   const todayBn = new Date().toLocaleDateString('bn-BD', { day: 'numeric', month: 'long', year: 'numeric' });
   ctx.fillStyle = '#f8fafc';
   ctx.font = 'bold 20px "Noto Sans Bengali", sans-serif';
   ctx.textAlign = 'right';
   ctx.fillText(todayBn, 960, 860);
 
-  // ৫. M,A TV ব্রান্ডিং
+  // M,A TV ব্রান্ডিং
   ctx.textAlign = 'left';
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 32px "Noto Sans Bengali", sans-serif';
@@ -161,7 +199,7 @@ async function generateBanglaNewsCard(titleBn, imageUrl, sourceName) {
   ctx.font = '18px "Noto Sans Bengali", sans-serif';
   ctx.fillText('► www.matv.news   f /matvbd   🔴 /matvbd', 200, 892);
 
-  // ৬. র্যান্ডম মজার ট্রল অ্যাডভারটাইজমেন্ট
+  // ডাইনামিক ফানি অ্যাড
   const randomAd = FUNNY_ADS[Math.floor(Math.random() * FUNNY_ADS.length)];
   
   ctx.fillStyle = '#ffffff';
@@ -185,7 +223,7 @@ async function generateBanglaNewsCard(titleBn, imageUrl, sourceName) {
 }
 
 async function checkAndPostNews() {
-  console.log(`[${new Date().toLocaleTimeString()}] 🔍 সংবাদ খোঁজা হচ্ছে...`);
+  console.log(`[${new Date().toLocaleTimeString()}] 🔍 নতুন সংবাদের সন্ধান চলছে...`);
 
   for (const source of FEEDS) {
     try {
@@ -205,10 +243,11 @@ async function checkAndPostNews() {
         const titleBn = await translateToBangla(rawTitle);
         const snippetBn = await translateToBangla(rawSnippet);
 
-        // সংবাদের সংশ্লিষ্ট ছবি সংগ্রহ
-        const mediaUrl = extractNewsImage(item);
+        // অ্যাডভান্সড ইমেজ এক্সট্রাকশন
+        const imageUrl = await extractNewsImage(item);
+        console.log(`🖼 ছবির URL: ${imageUrl || 'ছবি পাওয়া যায়নি'}`);
 
-        const photoBuffer = await generateBanglaNewsCard(titleBn, mediaUrl, source.name);
+        const photoBuffer = await generateBanglaNewsCard(titleBn, imageUrl, source.name);
 
         const captionText = 
 `📺 <b>M,A TV - সরাসরি সংবাদ সম্প্রচার</b>
@@ -233,7 +272,7 @@ ${snippetBn}
         });
 
         savePostedNews(newsLink);
-        console.log('✅ বাংলায় সংবাদ সফলভাবে পোস্ট করা হয়েছে!');
+        console.log('✅ ফটোসহ বাংলায় পোস্ট সম্পন্ন!');
 
         await new Promise(res => setTimeout(res, 60000));
       }
@@ -244,7 +283,7 @@ ${snippetBn}
 }
 
 async function startContinuousLoop() {
-  console.log("⚡ M,A TV Bangla News Bot সক্রিয় হয়েছে...");
+  console.log("⚡ M,A TV Bot অ্যাক্টিভ হয়েছে...");
   while (true) {
     await checkAndPostNews();
     await new Promise(res => setTimeout(res, 180000));
