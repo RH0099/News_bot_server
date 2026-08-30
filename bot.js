@@ -4,6 +4,7 @@ const { createCanvas, loadImage } = require('canvas');
 const fs = require('fs');
 const axios = require('axios');
 const { translate } = require('@vitalets/google-translate-api');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const parser = new Parser({
   customFields: {
@@ -17,6 +18,7 @@ const parser = new Parser({
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 if (!BOT_TOKEN || !CHAT_ID) {
   console.error("❌ TELEGRAM_BOT_TOKEN অথবা TELEGRAM_CHAT_ID পাওয়া যায়নি!");
@@ -24,26 +26,17 @@ if (!BOT_TOKEN || !CHAT_ID) {
 }
 
 const bot = new TelegramBot(BOT_TOKEN, { polling: false });
+const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
 const FEEDS = [
   { name: 'আল জাজিরা (Al Jazeera)', url: 'https://www.aljazeera.com/xml/rss/all.xml' },
   { name: 'বিবিসি ওয়ার্ল্ড (BBC)', url: 'http://feeds.bbci.co.uk/news/world/rss.xml' },
-  { name: 'টিআরটি ওয়ার্ল্ড (TRT)', url: 'https://www.trtworld.com/rss/news' }
-];
-
-// আনলিমাইটেড ট্রল এডভারটাইজমেন্ট কালেকশন
-const FUNNY_ADS = [
-  { title: 'আওয়ামী মোবাইল - সেরা দামে ফালতু ফোন', brand: 'মি আওয়ামী', warranty: '১৭ বছরের গ্যারান্টি' },
-  { title: 'ভণ্ড চার্জার - ১০০% স্লো চার্জের গ্যারান্টি', brand: 'ভণ্ড', warranty: 'গ্যারান্টি নাই' },
-  { title: 'ফাঁকি ফ্যান - হাওয়া ছাড়া শুধুই বিকট শব্দ', brand: 'ফাঁকি', warranty: '৫০ বছরের ওয়ারেন্টি' },
-  { title: 'ভুয়া পাওয়ার ব্যাংক - ২ পার্সেন্টে চার্জ শেষ', brand: 'ফেক পাওয়ার', warranty: 'জিরো ওয়ারেন্টি' },
-  { title: 'পলাইম সিম - নেটওয়ার্ক ছাড়া ফালতু স্পিড', brand: 'পলাইম', warranty: 'লাইফটাইম ধোঁকা' },
-  { title: 'ফাঁকা বাল্ব - আলো দেবে না শুধুই বিল তুলবে', brand: 'ফাঁকা', warranty: '১০০ বছরের ওয়ারেন্টি' },
-  { title: 'ঠকবাজ এসি - গরম বাতাসে ঘর ভরিয়ে দেয়', brand: 'ঠকবাজ', warranty: 'কোনো গ্যারান্টি নেই' },
-  { title: 'ধান্দাবাজ বাইক - তেল খাবে বেশি চলবে কম', brand: 'ধান্দা', warranty: '৫ মিনিটের ওয়ারেন্টি' }
+  { name: 'টিআরটি ওয়ার্ল্ড (TRT)', url: 'https://www.trtworld.com/rss/news.xml' }
 ];
 
 const POSTED_NEWS_FILE = './posted_news.json';
+const FUNNY_ADS_FILE = './funny_ads.txt';
+
 let postedNews = [];
 
 if (fs.existsSync(POSTED_NEWS_FILE)) {
@@ -60,6 +53,72 @@ function savePostedNews(link) {
   fs.writeFileSync(POSTED_NEWS_FILE, JSON.stringify(postedNews, null, 2));
 }
 
+// 📁 ফাইল থেকে মজার অ্যাড পড়ার ফাংশন
+function getAdFromFile() {
+  if (!fs.existsSync(FUNNY_ADS_FILE)) return null;
+
+  try {
+    const data = fs.readFileSync(FUNNY_ADS_FILE, 'utf8');
+    const lines = data.split('\n').filter(line => line.trim().length > 0);
+
+    if (lines.length === 0) return null;
+
+    const randomLine = lines[Math.floor(Math.random() * lines.length)];
+    const parts = randomLine.split('|').map(p => p.trim());
+
+    if (parts.length >= 3) {
+      return { title: parts[0], brand: parts[1], warranty: parts[2] };
+    }
+  } catch (err) {
+    console.error('⚠️ ফাইল থেকে অ্যাড পড়তে সমস্যা হয়েছে:', err.message);
+  }
+  return null;
+}
+
+// 🤖 AI দিয়ে মজার অ্যাড বানানোর ফাংশন (ফাইল ফেল করলে কাজ করবে)
+async function generateAdFromAI(newsTitle) {
+  if (!genAI) return null;
+
+  try {
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const prompt = `একটি ফানি বিজ্ঞাপনের জন্য JSON অবজেক্ট তৈরি করো। কেবল JSON উত্তর দাও:
+    {
+      "title": "ছোট ট্রল প্রোডাক্ট নাম (সর্বোচ্চ ৬-৭ শব্দ)",
+      "brand": "ব্র্যান্ড নাম (১-২ শব্দ)",
+      "warranty": "ওয়ারেন্টি মেসেজ (২-৪ শব্দ)"
+    }
+    সংবাদ শিরোনাম: "${newsTitle}"। কিন্তু বিজ্ঞাপনটি হবে সম্পূর্ণ ফালতু বা ভুয়া পণ্য নিয়ে।`;
+
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text().trim();
+    const cleanJson = responseText.replace(/```json|```/g, '').trim();
+    return JSON.parse(cleanJson);
+  } catch (err) {
+    console.log('⚠️ AI অ্যাড জেনারেট ব্যর্থ হয়েছে।');
+    return null;
+  }
+}
+
+// 🔄 ফাইল ও AI-এর সমন্বিত লজিক
+async function getFunnyAd(newsTitle) {
+  // ১. প্রথমে ফাইল থেকে নেওয়ার চেষ্টা করবে
+  const fileAd = getAdFromFile();
+  if (fileAd) {
+    console.log('📄 [funny_ads.txt] ফাইল থেকে বিজ্ঞাপন নেওয়া হয়েছে।');
+    return fileAd;
+  }
+
+  // ২. ফাইলে না থাকলে AI তৈরি করবে
+  const aiAd = await generateAdFromAI(newsTitle);
+  if (aiAd) {
+    console.log('🤖 [Gemini AI] দিয়ে বিজ্ঞাপন তৈরি করা হয়েছে।');
+    return aiAd;
+  }
+
+  // ৩. শেষ ব্যাকআপ
+  return { title: 'আওয়ামী মোবাইল - সেরা দামে ফালতু ফোন', brand: 'মি আওয়ামী', warranty: '১৭ বছরের গ্যারান্টি' };
+}
+
 async function translateToBangla(text) {
   try {
     const res = await translate(text, { to: 'bn' });
@@ -69,43 +128,43 @@ async function translateToBangla(text) {
   }
 }
 
-// ১. RSS Feed এবং Web Scraping থেকে ছবির URL খুঁজে বের করার অ্যাডভান্সড ফাংশন
 async function extractNewsImage(item) {
+  let url = null;
   try {
-    // Media content check
-    if (item.mediaContent && item.mediaContent.$ && item.mediaContent.$.url) return item.mediaContent.$.url;
-    if (item.mediaThumbnail && item.mediaThumbnail.$ && item.mediaThumbnail.$.url) return item.mediaThumbnail.$.url;
-    if (item.enclosure && item.enclosure.url) return item.enclosure.url;
-
-    // Media Group (Al Jazeera Specific)
-    if (item.mediaGroup && item.mediaGroup['media:content']) {
+    if (item.mediaContent && item.mediaContent.$ && item.mediaContent.$.url) url = item.mediaContent.$.url;
+    else if (item.mediaThumbnail && item.mediaThumbnail.$ && item.mediaThumbnail.$.url) url = item.mediaThumbnail.$.url;
+    else if (item.enclosure && item.enclosure.url) url = item.enclosure.url;
+    else if (item.mediaGroup && item.mediaGroup['media:content']) {
       const mediaList = item.mediaGroup['media:content'];
-      if (Array.isArray(mediaList) && mediaList[0].$.url) return mediaList[0].$.url;
-      if (mediaList.$ && mediaList.$.url) return mediaList.$.url;
+      if (Array.isArray(mediaList) && mediaList[0].$.url) url = mediaList[0].$.url;
+      else if (mediaList.$ && mediaList.$.url) url = mediaList.$.url;
     }
 
-    // HTML Content scraping (Img Tag)
-    const content = item.content || item['content:encoded'] || item.description || '';
-    const imgMatch = content.match(/<img[^>]+src=["']([^"']+)["']/i);
-    if (imgMatch && imgMatch[1]) return imgMatch[1];
+    if (!url) {
+      const content = item.content || item['content:encoded'] || item.description || '';
+      const imgMatch = content.match(/<img[^>]+src=["']([^"']+)["']/i);
+      if (imgMatch && imgMatch[1]) url = imgMatch[1];
+    }
 
-    // ওয়েবসাইট থেকে ওপেন গ্রাফ (og:image) ফালতু ব্লকিং ছাড়া নিয়ে আসা
-    if (item.link) {
+    if (!url && item.link) {
       const response = await axios.get(item.link, {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-        timeout: 5000
+        timeout: 4000
       });
       const ogMatch = response.data.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
                       response.data.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
-      if (ogMatch && ogMatch[1]) return ogMatch[1];
+      if (ogMatch && ogMatch[1]) url = ogMatch[1];
+    }
+
+    if (url && url.includes('ichef.bbci.co.uk')) {
+      url = url.replace(/\/standard\/\d+\//, '/standard/1024/');
     }
   } catch (err) {
-    console.log('⚠️ ছবি সরাসরি ওয়েবসাইট থেকে নিতে সমস্যা হয়েছে।');
+    console.log('⚠️ ছবি এক্সট্রাকশনে সমস্যা।');
   }
-  return null;
+  return url;
 }
 
-// ২. ছবির URL দিয়ে Buffer ডাউনলোড ফাংশন (Hotlink Protection bypass করার জন্য)
 async function fetchImageBuffer(url) {
   try {
     const response = await axios.get(url, {
@@ -116,13 +175,11 @@ async function fetchImageBuffer(url) {
     });
     return Buffer.from(response.data, 'binary');
   } catch (err) {
-    console.error('❌ ইমেজ ডাউনলোড ত্রুটি:', err.message);
     return null;
   }
 }
 
-// ৩. ক্যানভাস কার্ড জেনারেটর
-async function generateBanglaNewsCard(titleBn, imageUrl, sourceName) {
+async function generateBanglaNewsCard(titleBn, imageUrl, sourceName, funnyAd) {
   const canvas = createCanvas(1000, 1000);
   const ctx = canvas.getContext('2d');
 
@@ -141,7 +198,6 @@ async function generateBanglaNewsCard(titleBn, imageUrl, sourceName) {
     }
   }
 
-  // যদি কোনো কারণে ছবি একেবারেই লোড না হতে পারে
   if (!imgLoaded) {
     ctx.fillStyle = '#0f172a';
     ctx.fillRect(0, 0, 1000, 580);
@@ -156,11 +212,11 @@ async function generateBanglaNewsCard(titleBn, imageUrl, sourceName) {
     ctx.fillText(`উৎস: ${sourceName}`, 500, 330);
   }
 
-  // লাল ব্যানার (টাইটেল অংশ)
+  // লাল ব্যানার
   ctx.fillStyle = '#a3080c';
   ctx.fillRect(0, 580, 1000, 335);
 
-  // বাংলা নিউজ টাইটেল
+  // টাইটেল
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 36px "Noto Sans Bengali", sans-serif';
   ctx.textAlign = 'center';
@@ -183,14 +239,14 @@ async function generateBanglaNewsCard(titleBn, imageUrl, sourceName) {
   }
   ctx.fillText(line, 500, y);
 
-  // বাংলা তারিখ
+  // তারিখ
   const todayBn = new Date().toLocaleDateString('bn-BD', { day: 'numeric', month: 'long', year: 'numeric' });
   ctx.fillStyle = '#f8fafc';
   ctx.font = 'bold 20px "Noto Sans Bengali", sans-serif';
   ctx.textAlign = 'right';
   ctx.fillText(todayBn, 960, 860);
 
-  // M,A TV ব্রান্ডিং
+  // ব্রান্ডিং
   ctx.textAlign = 'left';
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 32px "Noto Sans Bengali", sans-serif';
@@ -199,31 +255,29 @@ async function generateBanglaNewsCard(titleBn, imageUrl, sourceName) {
   ctx.font = '18px "Noto Sans Bengali", sans-serif';
   ctx.fillText('► www.matv.news   f /matvbd   🔴 /matvbd', 200, 892);
 
-  // ডাইনামিক ফানি অ্যাড
-  const randomAd = FUNNY_ADS[Math.floor(Math.random() * FUNNY_ADS.length)];
-  
+  // অ্যাড স্ট্রিপ
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 915, 1000, 85);
 
   ctx.fillStyle = '#d97706';
   ctx.font = 'bold 22px "Noto Sans Bengali", sans-serif';
-  ctx.fillText(randomAd.title, 40, 965);
+  ctx.fillText(funnyAd.title, 40, 965);
 
   ctx.fillStyle = '#ef4444';
   ctx.fillRect(630, 925, 160, 65);
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 20px "Noto Sans Bengali", sans-serif';
-  ctx.fillText(randomAd.brand, 645, 962);
+  ctx.fillText(funnyAd.brand, 645, 962);
 
   ctx.fillStyle = '#1e293b';
   ctx.font = 'bold 14px "Noto Sans Bengali", sans-serif';
-  ctx.fillText(randomAd.warranty, 805, 960);
+  ctx.fillText(funnyAd.warranty, 805, 960);
 
   return canvas.toBuffer('image/png');
 }
 
 async function checkAndPostNews() {
-  console.log(`[${new Date().toLocaleTimeString()}] 🔍 নতুন সংবাদের সন্ধান চলছে...`);
+  console.log(`[${new Date().toLocaleTimeString()}] 🔍 ১ ঘণ্টার সংবাদ প্রসেস হচ্ছে...`);
 
   for (const source of FEEDS) {
     try {
@@ -243,11 +297,12 @@ async function checkAndPostNews() {
         const titleBn = await translateToBangla(rawTitle);
         const snippetBn = await translateToBangla(rawSnippet);
 
-        // অ্যাডভান্সড ইমেজ এক্সট্রাকশন
         const imageUrl = await extractNewsImage(item);
-        console.log(`🖼 ছবির URL: ${imageUrl || 'ছবি পাওয়া যায়নি'}`);
+        
+        // ফাইল বা AI থেকে মজার অ্যাড সংগ্রহ
+        const funnyAd = await getFunnyAd(titleBn);
 
-        const photoBuffer = await generateBanglaNewsCard(titleBn, imageUrl, source.name);
+        const photoBuffer = await generateBanglaNewsCard(titleBn, imageUrl, source.name, funnyAd);
 
         const captionText = 
 `📺 <b>M,A TV - সরাসরি সংবাদ সম্প্রচার</b>
@@ -263,30 +318,32 @@ ${snippetBn}
 📌 <b>উৎস:</b> ${source.name}
 🔗 <a href="${newsLink}">মূল খবর বিস্তারিত পড়তে এখানে চাপুন</a>`;
 
-        await bot.sendPhoto(CHAT_ID, photoBuffer, {
-          caption: captionText,
-          parse_mode: 'HTML',
-          reply_markup: {
-            inline_keyboard: [[{ text: '🌐 মূল খবরটি সরাসরি পড়ুন', url: newsLink }]]
-          }
-        });
-
-        savePostedNews(newsLink);
-        console.log('✅ ফটোসহ বাংলায় পোস্ট সম্পন্ন!');
-
-        await new Promise(res => setTimeout(res, 60000));
+        try {
+          await bot.sendPhoto(CHAT_ID, photoBuffer, {
+            caption: captionText,
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [[{ text: '🌐 মূল খবরটি সরাসরি পড়ুন', url: newsLink }]]
+            }
+          });
+          console.log('✅ ফটোসহ পোস্ট সম্পন্ন!');
+          savePostedNews(newsLink);
+          return; // ১ ঘণ্টার মধ্যে ১টি নিউজ পোস্ট করার লজিক
+        } catch (postErr) {
+          console.error(`❌ পোস্ট এরর: ${postErr.message}`);
+        }
       }
     } catch (err) {
-      console.error(`❌ ${source.name} প্রসেসিং ত্রুটি:`, err.message);
+      console.error(`❌ ${source.name} প্রসেসিং এরর:`, err.message);
     }
   }
 }
 
 async function startContinuousLoop() {
-  console.log("⚡ M,A TV Bot অ্যাক্টিভ হয়েছে...");
+  console.log("⚡ M,A TV Bot অ্যাক্টিভ হয়েছে (১ ঘণ্টার টাইম ফ্রেমে চলবে)...");
   while (true) {
     await checkAndPostNews();
-    await new Promise(res => setTimeout(res, 180000));
+    await new Promise(res => setTimeout(res, 3600000));
   }
 }
 
