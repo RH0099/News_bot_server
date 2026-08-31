@@ -29,9 +29,14 @@ const bot = new TelegramBot(BOT_TOKEN, { polling: false });
 const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
 const FEEDS = [
-  { name: 'আল জাজিরা (Al Jazeera)', url: 'https://www.aljazeera.com/xml/rss/all.xml' },
+{ name: 'আল জাজিরা (Al Jazeera)', url: 'https://www.aljazeera.com/xml/rss/all.xml' },
   { name: 'বিবিসি ওয়ার্ল্ড (BBC)', url: 'http://feeds.bbci.co.uk/news/world/rss.xml' },
-  { name: 'টিআরটি ওয়ার্ল্ড (TRT)', url: 'https://www.trtworld.com/rss/news.xml' }
+  { name: 'টিআরটি ওয়ার্ল্ড (TRT)', url: 'https://www.trtworld.com/rss/news.xml' },
+  { name: 'রয়টার্স (Reuters)', url: 'https://www.reutersagency.com/feed/?best-topics=world-news&post_type=best' },
+  { name: 'ডয়চে ভেলে (DW)', url: 'https://rss.dw.com/rdf/rss-en-all' },
+  { name: 'সিএনএন (CNN)', url: 'http://rss.cnn.com/rss/edition_world.rss' },
+  { name: 'দ্য গার্ডিয়ান (The Guardian)', url: 'https://www.theguardian.com/world/rss' },
+  { name: 'এনপিআর (NPR News)', url: 'https://feeds.npr.org/1001/rss.xml' }
 ];
 
 const POSTED_NEWS_FILE = './posted_news.json';
