@@ -29,7 +29,7 @@ const bot = new TelegramBot(BOT_TOKEN, { polling: false });
 const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
 const FEEDS = [
-{ name: 'আল জাজিরা (Al Jazeera)', url: 'https://www.aljazeera.com/xml/rss/all.xml' },
+  { name: 'আল জাজিরা (Al Jazeera)', url: 'https://www.aljazeera.com/xml/rss/all.xml' },
   { name: 'বিবিসি ওয়ার্ল্ড (BBC)', url: 'http://feeds.bbci.co.uk/news/world/rss.xml' },
   { name: 'টিআরটি ওয়ার্ল্ড (TRT)', url: 'https://www.trtworld.com/rss/news.xml' },
   { name: 'রয়টার্স (Reuters)', url: 'https://www.reutersagency.com/feed/?best-topics=world-news&post_type=best' },
@@ -52,13 +52,38 @@ if (fs.existsSync(POSTED_NEWS_FILE)) {
   }
 }
 
-function savePostedNews(link) {
-  postedNews.push(link);
+// 🧹 শিরোনাম নরম্যালাইজড (পরিস্কার) করার হেলপার ফাংশন
+function normalizeText(text) {
+  if (!text) return '';
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s\u0980-\u09FF]/gi, '') // ইংরেজি ও বাংলা অক্ষর ছাড়া সব সিম্বল বাদ দেওয়া
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// 🔍 পোস্ট ডুপ্লিকেট কি না তা যাচাই করার ফাংশন (Link বা Title উভয় চেক করবে)
+function isDuplicateNews(link, rawTitle) {
+  const normTitle = normalizeText(rawTitle);
+
+  return postedNews.some(item => {
+    if (typeof item === 'string') {
+      return item === link || normalizeText(item) === normTitle;
+    } else if (typeof item === 'object' && item !== null) {
+      return item.link === link || (item.title && normalizeText(item.title) === normTitle);
+    }
+    return false;
+  });
+}
+
+function savePostedNews(link, rawTitle) {
+  // লিংক এবং টাইটেল উভয় অবজেক্ট আকারে রাখা হচ্ছে
+  postedNews.push({ link, title: rawTitle });
   if (postedNews.length > 500) postedNews.shift();
   fs.writeFileSync(POSTED_NEWS_FILE, JSON.stringify(postedNews, null, 2));
 }
 
-// 📁 ফাইল থেকে মজার অ্যাড পড়ার ফাংশন
+// 📁 ফাইল থেকে মজার অ্যাড পড়ার ফাংশন
 function getAdFromFile() {
   if (!fs.existsSync(FUNNY_ADS_FILE)) return null;
 
@@ -75,12 +100,12 @@ function getAdFromFile() {
       return { title: parts[0], brand: parts[1], warranty: parts[2] };
     }
   } catch (err) {
-    console.error('⚠️ ফাইল থেকে অ্যাড পড়তে সমস্যা হয়েছে:', err.message);
+    console.error('⚠️ ফাইল থেকে অ্যাড পড়তে সমস্যা হয়েছে:', err.message);
   }
   return null;
 }
 
-// 🤖 AI দিয়ে মজার অ্যাড বানানোর ফাংশন (ফাইল ফেল করলে কাজ করবে)
+// 🤖 AI দিয়ে মজার অ্যাড বানানোর ফাংশন (ফাইল ফেল করলে কাজ করবে)
 async function generateAdFromAI(newsTitle) {
   if (!genAI) return null;
 
@@ -90,33 +115,33 @@ async function generateAdFromAI(newsTitle) {
     {
       "title": "ছোট ট্রল প্রোডাক্ট নাম (সর্বোচ্চ ৬-৭ শব্দ)",
       "brand": "ব্র্যান্ড নাম (১-২ শব্দ)",
-      "warranty": "ওয়ারেন্টি মেসেজ (২-৪ শব্দ)"
+      "warranty": "ওয়ারেন্টি মেসেজ (২-৪ শব্দ)"
     }
-    সংবাদ শিরোনাম: "${newsTitle}"। কিন্তু বিজ্ঞাপনটি হবে সম্পূর্ণ ফালতু বা ভুয়া পণ্য নিয়ে।`;
+    সংবাদ শিরোনাম: "${newsTitle}"। কিন্তু বিজ্ঞাপনটি হবে সম্পূর্ণ ফালতু বা ভুয়া পণ্য নিয়ে।`;
 
     const result = await model.generateContent(prompt);
     const responseText = result.response.text().trim();
     const cleanJson = responseText.replace(/```json|```/g, '').trim();
     return JSON.parse(cleanJson);
   } catch (err) {
-    console.log('⚠️ AI অ্যাড জেনারেট ব্যর্থ হয়েছে।');
+    console.log('⚠️ AI অ্যাড জেনারেট ব্যর্থ হয়েছে।');
     return null;
   }
 }
 
 // 🔄 ফাইল ও AI-এর সমন্বিত লজিক
 async function getFunnyAd(newsTitle) {
-  // ১. প্রথমে ফাইল থেকে নেওয়ার চেষ্টা করবে
+  // ১. প্রথমে ফাইল থেকে নেওয়ার চেষ্টা করবে
   const fileAd = getAdFromFile();
   if (fileAd) {
-    console.log('📄 [funny_ads.txt] ফাইল থেকে বিজ্ঞাপন নেওয়া হয়েছে।');
+    console.log('📄 [funny_ads.txt] ফাইল থেকে বিজ্ঞাপন নেওয়া হয়েছে।');
     return fileAd;
   }
 
   // ২. ফাইলে না থাকলে AI তৈরি করবে
   const aiAd = await generateAdFromAI(newsTitle);
   if (aiAd) {
-    console.log('🤖 [Gemini AI] দিয়ে বিজ্ঞাপন তৈরি করা হয়েছে।');
+    console.log('🤖 [Gemini AI] দিয়ে বিজ্ঞাপন তৈরি করা হয়েছে।');
     return aiAd;
   }
 
@@ -291,10 +316,14 @@ async function checkAndPostNews() {
 
       for (const item of feed.items) {
         const newsLink = item.link;
-
-        if (postedNews.includes(newsLink)) continue;
-
         const rawTitle = item.title.trim();
+
+        // 🛑 ডুপ্লিকেট সংবাদ ফিল্টারিং (ইউআরএল বা শিরোনাম মিললে স্কিপ করবে)
+        if (isDuplicateNews(newsLink, rawTitle)) {
+          console.log(`⏭️ [ডুপ্লিকেট স্কিপড]: ${rawTitle}`);
+          continue;
+        }
+
         let rawSnippet = item.contentSnippet || item.content || rawTitle;
         rawSnippet = rawSnippet.replace(/<[^>]*>?/gm, '').replace(/\s+/g, ' ').trim();
         if (rawSnippet.length > 250) rawSnippet = rawSnippet.slice(0, 250) + '...';
@@ -331,9 +360,9 @@ ${snippetBn}
               inline_keyboard: [[{ text: '🌐 মূল খবরটি সরাসরি পড়ুন', url: newsLink }]]
             }
           });
-          console.log('✅ ফটোসহ পোস্ট সম্পন্ন!');
-          savePostedNews(newsLink);
-          return; // ১ ঘণ্টার মধ্যে ১টি নিউজ পোস্ট করার লজিক
+          console.log(`✅ ফটোসহ পোস্ট সম্পন্ন! [${rawTitle}]`);
+          savePostedNews(newsLink, rawTitle);
+          return; // ১ ঘণ্টার মধ্যে ১টি নতুন নিউজ পোস্ট করে লুপ শেষ করবে
         } catch (postErr) {
           console.error(`❌ পোস্ট এরর: ${postErr.message}`);
         }
@@ -345,7 +374,7 @@ ${snippetBn}
 }
 
 async function startContinuousLoop() {
-  console.log("⚡ M,A TV Bot অ্যাক্টিভ হয়েছে (১ ঘণ্টার টাইম ফ্রেমে চলবে)...");
+  console.log("⚡ M,A TV Bot অ্যাক্টিভ হয়েছে (১ ঘণ্টার টাইম ফ্রেমে চলবে)...");
   while (true) {
     await checkAndPostNews();
     await new Promise(res => setTimeout(res, 3600000));
