@@ -31,3 +31,11 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: node bot.js
+
+      - name: Clean Old Workflow Runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          retain_days: 0 # শেষ বা বন্ধ হয়ে যাওয়া আগের সব Run সাথে সাথে মুছে দেবে
+          keep_minimum_runs: 1 # শুধু সবচেয়ে শেষ রানটি ধরে রাখবে
